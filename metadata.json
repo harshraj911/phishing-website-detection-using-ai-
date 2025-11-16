@@ -1,0 +1,5 @@
+{
+  "name": "AI Phishing Detector",
+  "description": "A web application that uses AI to analyze URLs and detect potential phishing websites. Users can submit a URL to receive a real-time risk assessment, including a classification, confidence score, and a detailed breakdown of the analysis.",
+  "requestFramePermissions": []
+}
