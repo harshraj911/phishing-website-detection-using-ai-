@@ -43,7 +43,7 @@ const riskConfig = {
 };
 
 const FeatureItem: React.FC<{ item: FeatureAnalysis }> = ({ item }) => {
-    const { Icon, color } = riskConfig[item.risk];
+    const { Icon, color } = riskConfig[item.risk] || riskConfig[RiskLevel.LOW];
     return (
         <li className="flex items-start p-4 bg-gray-800 rounded-lg">
             <Icon className={`w-6 h-6 mr-4 flex-shrink-0 mt-1 ${color}`} />
@@ -57,7 +57,7 @@ const FeatureItem: React.FC<{ item: FeatureAnalysis }> = ({ item }) => {
 
 
 export const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
-    const config = classificationConfig[result.classification];
+    const config = classificationConfig[result.classification] || classificationConfig[Classification.SUSPICIOUS];
     const confidencePercent = (result.confidenceScore * 100).toFixed(0);
 
     return (
@@ -84,6 +84,28 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = ({ result }) => {
                     ))}
                 </ul>
             </div>
+
+            {result.groundingUrls && result.groundingUrls.length > 0 && (
+                <div className="mt-6 pt-6 border-t border-gray-700">
+                    <h4 className="text-sm font-semibold text-gray-400 mb-3 flex items-center">
+                        <InfoIcon className="w-4 h-4 mr-2" />
+                        Verified Sources & Search Context
+                    </h4>
+                    <div className="grid gap-2 grid-cols-1 md:grid-cols-2">
+                        {result.groundingUrls.map((url, i) => (
+                            <a 
+                                key={i} 
+                                href={url} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="text-xs text-blue-400 hover:text-blue-300 hover:underline truncate bg-gray-900/50 p-2 rounded border border-gray-700 block transition-colors"
+                            >
+                                {url}
+                            </a>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

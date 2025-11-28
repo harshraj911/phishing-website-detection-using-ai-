@@ -1,7 +1,6 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import type { AnalysisResult } from '../types';
-import { Classification, RiskLevel } from '../types';
 
 const API_KEY = process.env.API_KEY;
 
@@ -11,68 +10,68 @@ if (!API_KEY) {
 
 const ai = new GoogleGenAI({ apiKey: API_KEY });
 
-const responseSchema = {
-    type: Type.OBJECT,
-    properties: {
-        classification: { 
-            type: Type.STRING,
-            enum: [Classification.PHISHING, Classification.LEGITIMATE, Classification.SUSPICIOUS],
-            description: "The final classification of the URL."
-        },
-        confidenceScore: { 
-            type: Type.NUMBER,
-            description: "A score from 0.0 to 1.0 indicating the confidence in the classification. Higher means more confident."
-        },
-        riskLevel: {
-            type: Type.STRING,
-            enum: [RiskLevel.HIGH, RiskLevel.MEDIUM, RiskLevel.LOW, RiskLevel.NONE],
-            description: "The overall risk level assessed for the URL."
-        },
-        summary: {
-            type: Type.STRING,
-            description: "A concise, one or two-sentence summary of the findings."
-        },
-        featureAnalysis: {
-            type: Type.ARRAY,
-            description: "A breakdown of the analysis across different features.",
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    feature: { type: Type.STRING, description: "The name of the feature analyzed (e.g., 'SSL Certificate', 'URL Structure')." },
-                    status: { type: Type.STRING, description: "The status of the feature (e.g., 'Valid', 'Suspicious', 'Not Found')." },
-                    risk: { 
-                        type: Type.STRING,
-                        enum: [RiskLevel.HIGH, RiskLevel.MEDIUM, RiskLevel.LOW, RiskLevel.NONE],
-                        description: "The risk level associated with this specific feature."
-                    },
-                    details: { type: Type.STRING, description: "A brief explanation of the findings for this feature." }
-                },
-                required: ["feature", "status", "risk", "details"]
-            }
-        }
-    },
-    required: ["classification", "confidenceScore", "riskLevel", "summary", "featureAnalysis"]
-};
-
-
 export const analyzeUrl = async (url: string): Promise<AnalysisResult> => {
   try {
+    const systemInstruction = `
+You are a highly advanced AI-powered Phishing Detection System. 
+Your goal is to analyze a provided URL to determine if it is a phishing attempt, suspicious, or legitimate.
+
+CRITICAL INSTRUCTION:
+1. You MUST use the Google Search tool to verify if the domain actually exists and is currently active. 
+2. If the domain does NOT exist, is unreachable, or looks like a parked domain with no real content, you MUST classify it as "SUSPICIOUS" or "PHISHING" depending on context, and set the risk level to "High" or "Medium". Do NOT classify non-existent sites as "Legitimate".
+3. Check for recent phishing reports regarding the domain using search.
+
+OUTPUT FORMAT:
+You must respond with a raw JSON object. Do not include markdown formatting (like \`\`\`json).
+The JSON must strictly adhere to this structure:
+{
+  "classification": "phishing" | "legitimate" | "suspicious",
+  "confidenceScore": number, // 0.0 to 1.0
+  "riskLevel": "High" | "Medium" | "Low" | "None",
+  "summary": "A concise summary of findings, specifically mentioning if the site exists or not based on search results.",
+  "featureAnalysis": [
+    {
+      "feature": "string", // e.g., "Domain Existence", "SSL", "Reputation"
+      "status": "string",
+      "risk": "High" | "Medium" | "Low" | "None",
+      "details": "string"
+    }
+  ]
+}
+`;
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `Analyze the following URL for phishing potential: ${url}`,
+      contents: `Analyze this URL: ${url}`,
       config: {
-        responseMimeType: "application/json",
-        responseSchema: responseSchema,
-        systemInstruction: "You are a highly advanced AI-powered Phishing Detection System. Your task is to analyze a given URL and provide a detailed risk assessment. You must respond ONLY with a JSON object that strictly adheres to the provided schema. Do not include any introductory text, apologies, or explanations outside of the JSON structure. Analyze features like URL structure (length, special characters, subdomains), domain age, SSL/TLS certificate validity, keyword usage (e.g., 'login', 'secure'), and HTML content cues if possible. Base your confidence score on the combination of these factors.",
+        tools: [{ googleSearch: {} }],
+        systemInstruction: systemInstruction,
       },
     });
 
-    const jsonText = response.text.trim();
-    const result = JSON.parse(jsonText) as AnalysisResult;
+    const text = response.text || "";
     
-    // Basic validation to ensure the response shape is correct
+    // robust JSON extraction
+    const jsonStart = text.indexOf('{');
+    const jsonEnd = text.lastIndexOf('}');
+    
+    if (jsonStart === -1 || jsonEnd === -1) {
+        throw new Error("Invalid response format: No JSON object found.");
+    }
+    
+    const jsonStr = text.substring(jsonStart, jsonEnd + 1);
+    const result = JSON.parse(jsonStr) as AnalysisResult;
+
+    // Extract grounding URLs (search sources)
+    const groundingUrls = response.candidates?.[0]?.groundingMetadata?.groundingChunks
+        ?.map((chunk: any) => chunk.web?.uri)
+        .filter((uri: any): uri is string => typeof uri === 'string') || [];
+
+    result.groundingUrls = groundingUrls;
+
+    // Basic validation
     if (!result.classification || !result.featureAnalysis) {
-        throw new Error("Invalid response format from AI.");
+        throw new Error("Invalid JSON structure from AI.");
     }
 
     return result;

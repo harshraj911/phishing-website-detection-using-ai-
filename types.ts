@@ -25,4 +25,5 @@ export interface AnalysisResult {
     riskLevel: RiskLevel;
     summary: string;
     featureAnalysis: FeatureAnalysis[];
+    groundingUrls?: string[];
 }
